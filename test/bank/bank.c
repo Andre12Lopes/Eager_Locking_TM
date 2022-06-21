@@ -63,7 +63,6 @@ int main()
 
     s = (uint64_t)me();
     tid = me();
-    // buddy_init(4096);
 
 #ifdef TX_IN_MRAM
     tx_mram[tid].TID = tid;
@@ -119,13 +118,13 @@ int main()
     // ------------------------------------------------------
 
     for (int i = 0; i < N_TRANSACTIONS; ++i)
-    {
+    {   
+
         do 
         {
             ra = RAND_R_FNC(s) % N_ACCOUNTS;
             rb = RAND_R_FNC(s) % N_ACCOUNTS;
         } while(ra == rb);
-        
         
 #ifdef RO_TX
         rc = (RAND_R_FNC(s) % 100) + 1;

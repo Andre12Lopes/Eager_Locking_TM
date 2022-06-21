@@ -109,7 +109,9 @@ stm_wtetl_rollback(TYPE stm_tx *tx)
         {
             mutex_lock(&(r->lock->mutex_r));
 
-            if ((--(r->lock->readers)) == 0)
+            (r->lock->readers)--;
+
+            if (r->lock->readers == 0)
             {
                 mutex_unlock(&(r->lock->mutex_g));
             }
@@ -134,8 +136,14 @@ stm_wtetl_rollback(TYPE stm_tx *tx)
 
     SET_STATUS(tx->status, TX_ABORTED);
 
+    tx->retries++;
+    if (tx->retries > 3)
+    { /* TUNABLE */
+        backoff(tx, tx->retries);
+    }
+
     /* Make sure that all lock releases become visible */
-    ATOMIC_B_WRITE;
+    // ATOMIC_B_WRITE;
 }
 
 static inline stm_word_t 
@@ -149,17 +157,21 @@ stm_wtetl_read(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr)
     // Get lock table entry
     lock = GET_LOCK(addr);
 
-    mutex_lock(&(lock->mutex_r));
-
     if (stm_has_lock(tx, lock))
     {
         value = ATOMIC_LOAD_VALUE_MRAM(addr);
-        mutex_unlock(&(lock->mutex_r));
 
         return value;
     }
 
-    if ((++lock->readers) == 1)
+    if (!mutex_trylock(&(lock->mutex_r)))
+    {
+        stm_wtetl_rollback(tx);
+   
+        return 0;
+    }
+
+    if ((++(lock->readers)) == 1)
     {
         if (!mutex_trylock(&(lock->mutex_g)))
         {
@@ -168,7 +180,7 @@ stm_wtetl_read(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr)
 
             mutex_unlock(&(lock->mutex_r));
             stm_wtetl_rollback(tx);
-            // printf("ROLLBACK READ | %d\n", me());
+            // printf("ROLLBACK READ | TID = %d | ADDR = %p | LOCK = %p\n", me(), addr, lock);
    
             return 0;
         }
@@ -200,7 +212,12 @@ stm_wtetl_write(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr, stm_word_
     /* Get reference to lock */
     lock = GET_LOCK(addr);
 
-    mutex_lock(&(lock->mutex_r));
+    if (!mutex_trylock(&(lock->mutex_r)))
+    {
+        stm_wtetl_rollback(tx);
+   
+        return 0;
+    }
 
     r = stm_has_lock_read(tx, lock);
     if (r != NULL && lock->readers == 1)
@@ -212,6 +229,12 @@ stm_wtetl_write(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr, stm_word_
 
     res = mutex_trylock(&(lock->mutex_g));
 
+    // if (&(r->lock->mutex_g) != &(lock->mutex_g))
+    // {
+    //     printf("%p | %p | LOCK = %p | R = %p | TID = %d\n", &(r->lock->mutex_g), &(lock->mutex_g), lock, r, me());
+    //     printf("--------------------------------\n");
+    // }
+
     mutex_unlock(&(lock->mutex_r));
 
     if (!res)
@@ -221,7 +244,7 @@ stm_wtetl_write(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr, stm_word_
         {
             // Lock owned by other transaction
             stm_wtetl_rollback(tx);
-            // printf("ROLLBACK WRITE | %d\n", me());
+            // printf("ROLLBACK WRITE | TID = %d | ADDR = %p | LOCK = %p\n", me(), addr, lock);
             
             return NULL;
         }
@@ -293,7 +316,7 @@ stm_wtetl_commit(TYPE stm_tx *tx)
     tx->total_commit_validation_cycles += perfcounter_get() - s_time;
 
     /* Make sure that the updates become visible before releasing locks */
-    ATOMIC_B_WRITE;
+    // ATOMIC_B_WRITE;
 
     /* Decrease #readers */
     r = tx->r_set.entries;
@@ -324,7 +347,7 @@ stm_wtetl_commit(TYPE stm_tx *tx)
 
     /* Make sure that all lock releases become visible */
     /* TODO: is ATOMIC_MB_WRITE required? */
-    ATOMIC_B_WRITE;
+    // ATOMIC_B_WRITE;
 
     return 1;
 }

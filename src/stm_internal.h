@@ -11,7 +11,7 @@
 #include "mutex.h"
 
 #ifndef LOCK_SHIFT_EXTRA
-#define LOCK_SHIFT_EXTRA            2
+#define LOCK_SHIFT_EXTRA            0
 #endif
 
 // #define LOCK_ARRAY_SIZE             (1 << LOCK_ARRAY_LOG_SIZE)
@@ -39,7 +39,55 @@ enum
 
 extern global_t _tinystm;
 
+static inline unsigned long long 
+MarsagliaXORV(unsigned long long x)
+{
+    if (x == 0)
+    {
+        x = 1;
+    }
+
+    x ^= x << 6;
+    x ^= x >> 21;
+    x ^= x << 7;
+
+    return x;
+}
+
+static inline unsigned long long 
+MarsagliaXOR(TYPE unsigned long long *seed)
+{
+    unsigned long long x = MarsagliaXORV(*seed);
+    *seed = x;
+
+    return x;
+}
+
+static inline unsigned long long 
+TSRandom(TYPE stm_tx *tx)
+{
+    return MarsagliaXOR(&tx->rng);
+}
+
+static inline void 
+backoff(TYPE stm_tx *tx, long attempt)
+{
+    unsigned long long stall = TSRandom(tx) & 0xFF;
+    // stall += attempt >> 2; 
+    stall = stall << attempt;
+    // stall = (stall * 10) << attempt;
+    // stall *= 10;
+
+    /* CCM: timer function may misbehave */
+    volatile unsigned long long  i = 0;
+    while (i++ < stall)
+    {
+        // PAUSE();
+    }
+}
+
 #include "stm_wtetl.h"
+
 
 static inline void
 int_stm_start(TYPE stm_tx *tx)
