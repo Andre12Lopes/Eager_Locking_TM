@@ -1,5 +1,5 @@
-#ifndef _TINY_INTERNAL_H_
-#define _TINY_INTERNAL_H_
+#ifndef _STM_INTERNAL_H_
+#define _STM_INTERNAL_H_
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +19,7 @@
 #define LOCK_SHIFT                  (((sizeof(stm_word_t) == 4) ? 2 : 3) + LOCK_SHIFT_EXTRA)
 #define LOCK_IDX(a)                 (((stm_word_t)(a) >> LOCK_SHIFT) & LOCK_MASK)
 #define GET_LOCK(a)                 (_tinystm.locks + LOCK_IDX(a))
+#define GET_READ(a)                 (_read.readers_arr + LOCK_IDX(a))
 
 enum
 {                                           /* Transaction status */
@@ -38,6 +39,7 @@ enum
 #define IS_ABORTED(s)       ((GET_STATUS(s) & 0x04) == TX_ABORTED)
 
 extern global_t _tinystm;
+extern readers_t _read;
 
 static inline unsigned long long 
 MarsagliaXORV(unsigned long long x)
@@ -72,7 +74,7 @@ TSRandom(TYPE stm_tx *tx)
 static inline void 
 backoff(TYPE stm_tx *tx, long attempt)
 {
-    unsigned long long stall = TSRandom(tx) & 0xFF;
+    unsigned long long stall = TSRandom(tx) & 0xF;
     // stall += attempt >> 2; 
     stall = stall << attempt;
     // stall = (stall * 10) << attempt;
@@ -183,4 +185,4 @@ int_stm_commit(TYPE stm_tx *tx)
     return 1;
 }
 
-#endif /* _TINY_INTERNAL_H_ */
+#endif /* _STM_INTERNAL_H_ */

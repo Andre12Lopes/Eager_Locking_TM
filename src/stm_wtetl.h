@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 static inline void 
-stm_wtetl_add_to_rs(TYPE stm_tx *tx, volatile lock_entry_t *lock)
+stm_wtetl_add_to_rs(TYPE stm_tx *tx, volatile lock_entry_t *lock, volatile readers_entry_t *read)
 {
     TYPE r_entry_t *r;
 
@@ -24,6 +24,7 @@ stm_wtetl_add_to_rs(TYPE stm_tx *tx, volatile lock_entry_t *lock)
 
     r = &tx->r_set.entries[tx->r_set.nb_entries++];
     r->lock = lock;
+    r->read = read;
     r->dropped = 0;
 }
 
@@ -109,9 +110,9 @@ stm_wtetl_rollback(TYPE stm_tx *tx)
         {
             mutex_lock(&(r->lock->mutex_r));
 
-            (r->lock->readers)--;
+            (r->read->readers)--;
 
-            if (r->lock->readers == 0)
+            if (r->read->readers == 0)
             {
                 mutex_unlock(&(r->lock->mutex_g));
             }
@@ -150,12 +151,14 @@ static inline stm_word_t
 stm_wtetl_read(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr)
 {
     volatile lock_entry_t *lock;
+    volatile readers_entry_t *read;
     stm_word_t value;
 
     // printf("==> stm_wt_read(t=%p[%lu-%lu],a=%p)\n", tx, (unsigned long)tx->start, (unsigned long)tx->end, addr);
 
     // Get lock table entry
     lock = GET_LOCK(addr);
+    read = GET_READ(addr);
 
     if (stm_has_lock(tx, lock))
     {
@@ -171,12 +174,12 @@ stm_wtetl_read(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr)
         return 0;
     }
 
-    if ((++(lock->readers)) == 1)
+    if ((++(read->readers)) == 1)
     {
         if (!mutex_trylock(&(lock->mutex_g)))
         {
             // This value is being written by other transaction
-            lock->readers--;
+            read->readers--;
 
             mutex_unlock(&(lock->mutex_r));
             stm_wtetl_rollback(tx);
@@ -188,7 +191,7 @@ stm_wtetl_read(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr)
 
     mutex_unlock(&(lock->mutex_r));
 
-    stm_wtetl_add_to_rs(tx, lock);
+    stm_wtetl_add_to_rs(tx, lock, read);
 
     value = ATOMIC_LOAD_VALUE_MRAM(addr);
     return value;
@@ -199,6 +202,7 @@ static inline TYPE w_entry_t *
 stm_wtetl_write(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr, stm_word_t value)
 {
     volatile lock_entry_t *lock;
+    volatile readers_entry_t *read;
     TYPE w_entry_t *w = NULL;
     TYPE w_entry_t *prev = NULL;
     TYPE r_entry_t *r;
@@ -211,6 +215,7 @@ stm_wtetl_write(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr, stm_word_
 
     /* Get reference to lock */
     lock = GET_LOCK(addr);
+    read = GET_READ(addr);
 
     if (!mutex_trylock(&(lock->mutex_r)))
     {
@@ -220,9 +225,9 @@ stm_wtetl_write(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr, stm_word_
     }
 
     r = stm_has_lock_read(tx, lock);
-    if (r != NULL && lock->readers == 1)
+    if (r != NULL && read->readers == 1)
     {
-        lock->readers = 0;
+        read->readers = 0;
         r->dropped = 1;
         mutex_unlock(&(r->lock->mutex_g));
     }
@@ -284,6 +289,7 @@ stm_wtetl_write(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr, stm_word_
 
     w->addr = addr;
     w->lock = lock;
+    w->read = read;
     // Remember old value
     w->value = ATOMIC_LOAD_VALUE_MRAM(addr);
 
@@ -326,7 +332,7 @@ stm_wtetl_commit(TYPE stm_tx *tx)
         {
             mutex_lock(&(r->lock->mutex_r));
 
-            if ((--(r->lock->readers)) == 0)
+            if ((--(r->read->readers)) == 0)
             {
                 mutex_unlock(&(r->lock->mutex_g));
             }

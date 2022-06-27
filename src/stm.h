@@ -1,5 +1,5 @@
-#ifndef _TINY_H_
-#define _TINY_H_
+#ifndef _STM_H_
+#define _STM_H_
 
 #include <stdint.h>
 
@@ -24,7 +24,7 @@
 #endif /* ! RW_SET_SIZE */
 
 #ifndef LOCK_ARRAY_LOG_SIZE
-#define LOCK_ARRAY_LOG_SIZE         10               /* Size of lock array: 2^10 = 1024 */
+#define LOCK_ARRAY_LOG_SIZE         7               /* Size of lock array: 2^7 = 128 */
 #endif
 
 #define LOCK_ARRAY_SIZE             (1 << LOCK_ARRAY_LOG_SIZE)
@@ -34,6 +34,7 @@ typedef intptr_t stm_word_t;
 typedef struct r_entry         /* Read set entry */
 {                              
     volatile struct lock_entry *lock; /* Pointer to lock (for fast access) */
+    volatile struct readers_entry *read; /* Pointer to read (for fast access) */
     unsigned int dropped;
 } r_entry_t;
 
@@ -50,6 +51,7 @@ typedef struct w_entry
     volatile TYPE_ACC stm_word_t *addr;     /* Address written */
     stm_word_t value;                       /* New (write-back) or old (write-through) value */
     volatile struct lock_entry *lock;       /* Pointer to lock (for fast access) */
+    volatile struct readers_entry *read;       /* Pointer to read (for fast access) */
     TYPE struct w_entry *next;              /* WRITE_BACK_ETL || WRITE_THROUGH: Next address covered by same lock (if any) */
 } w_entry_t;
 
@@ -90,15 +92,25 @@ typedef struct _stm_tx
 
 typedef struct lock_entry
 {
-    uint8_t mutex_r;
+    uint8_t mutex_r;     // 0001 0000 0000
     uint8_t mutex_g;
-    unsigned int readers;
+    // unsigned int readers;
 } lock_entry_t;
+
+typedef struct readers_entry
+{
+    unsigned int readers;
+} readers_entry_t;
 
 typedef struct
 {
     volatile struct lock_entry locks[LOCK_ARRAY_SIZE];
-} global_t;
+} global_t __attribute__ ((aligned(256)));
+
+typedef struct
+{
+    volatile struct readers_entry readers_arr[LOCK_ARRAY_SIZE];
+} readers_t;
 
 void stm_init(void);
 
@@ -110,4 +122,4 @@ void stm_store(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr, stm_word_t
 
 int stm_commit(TYPE stm_tx *tx);
 
-#endif /* _TINY_H_ */
+#endif /* _STM_H_ */

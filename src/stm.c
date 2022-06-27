@@ -7,6 +7,7 @@
 #include "stm_internal.h"
 
 global_t _tinystm;
+readers_t _read;
 
 void 
 stm_init(void)
@@ -22,6 +23,10 @@ stm_init(void)
     // // CLOCK = 0
 
     // _tinystm.initialized = 1;
+
+    printf("%p\n", _tinystm.locks);
+    printf("%p\n", &_tinystm.locks[1]);
+    printf("%p\n", &_tinystm.locks[127]);
 }
 
 void 
