@@ -2,6 +2,7 @@
 #define _STM_H_
 
 #include <stdint.h>
+#include <perfcounter.h>
 
 #ifdef TX_IN_MRAM
 #define TYPE __mram_ptr
@@ -16,11 +17,11 @@
 #endif
 
 #ifndef R_SET_SIZE
-# define R_SET_SIZE                 2                /* Initial size of read sets */
+# define R_SET_SIZE                 15                /* Initial size of read sets */
 #endif /* ! RW_SET_SIZE */
 
 #ifndef W_SET_SIZE
-# define W_SET_SIZE                 2                /* Initial size of write sets */
+# define W_SET_SIZE                 2               /* Initial size of write sets */
 #endif /* ! RW_SET_SIZE */
 
 #ifndef LOCK_ARRAY_LOG_SIZE
@@ -33,7 +34,7 @@ typedef intptr_t stm_word_t;
 
 typedef struct r_entry         /* Read set entry */
 {                              
-    volatile struct lock_entry *lock; /* Pointer to lock (for fast access) */
+    struct lock_entry *lock; /* Pointer to lock (for fast access) */
     volatile struct readers_entry *read; /* Pointer to read (for fast access) */
     unsigned int dropped;
 } r_entry_t;
@@ -50,7 +51,7 @@ typedef struct w_entry
 
     volatile TYPE_ACC stm_word_t *addr;     /* Address written */
     stm_word_t value;                       /* New (write-back) or old (write-through) value */
-    volatile struct lock_entry *lock;       /* Pointer to lock (for fast access) */
+    struct lock_entry *lock;       /* Pointer to lock (for fast access) */
     volatile struct readers_entry *read;       /* Pointer to read (for fast access) */
     TYPE struct w_entry *next;              /* WRITE_BACK_ETL || WRITE_THROUGH: Next address covered by same lock (if any) */
 } w_entry_t;

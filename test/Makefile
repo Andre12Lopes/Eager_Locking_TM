@@ -1,4 +1,4 @@
-TESTS = bank benchmark
+TESTS = bank benchmark intset
 
 .PHONY:	all $(TESTS)
 

@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 static inline void 
-stm_wtetl_add_to_rs(TYPE stm_tx *tx, volatile lock_entry_t *lock, volatile readers_entry_t *read)
+stm_wtetl_add_to_rs(TYPE stm_tx *tx, lock_entry_t *lock, volatile readers_entry_t *read)
 {
     TYPE r_entry_t *r;
 
@@ -139,7 +139,7 @@ stm_wtetl_rollback(TYPE stm_tx *tx)
 
     tx->retries++;
     if (tx->retries > 3)
-    { /* TUNABLE */
+    {  // TUNABLE 
         backoff(tx, tx->retries);
     }
 
@@ -150,7 +150,7 @@ stm_wtetl_rollback(TYPE stm_tx *tx)
 static inline stm_word_t 
 stm_wtetl_read(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr)
 {
-    volatile lock_entry_t *lock;
+    lock_entry_t *lock;
     volatile readers_entry_t *read;
     stm_word_t value;
 
@@ -167,12 +167,14 @@ stm_wtetl_read(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr)
         return value;
     }
 
-    if (!mutex_trylock(&(lock->mutex_r)))
-    {
-        stm_wtetl_rollback(tx);
+    // if (!mutex_trylock(&(lock->mutex_r)))
+    // {
+    //     stm_wtetl_rollback(tx);
    
-        return 0;
-    }
+    //     return 0;
+    // }
+
+    mutex_lock(&(lock->mutex_r));
 
     if ((++(read->readers)) == 1)
     {
@@ -194,6 +196,7 @@ stm_wtetl_read(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr)
     stm_wtetl_add_to_rs(tx, lock, read);
 
     value = ATOMIC_LOAD_VALUE_MRAM(addr);
+    // value = *addr;
     return value;
 }
 
@@ -201,7 +204,7 @@ stm_wtetl_read(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr)
 static inline TYPE w_entry_t *
 stm_wtetl_write(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr, stm_word_t value)
 {
-    volatile lock_entry_t *lock;
+    lock_entry_t *lock;
     volatile readers_entry_t *read;
     TYPE w_entry_t *w = NULL;
     TYPE w_entry_t *prev = NULL;
@@ -217,12 +220,14 @@ stm_wtetl_write(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr, stm_word_
     lock = GET_LOCK(addr);
     read = GET_READ(addr);
 
-    if (!mutex_trylock(&(lock->mutex_r)))
-    {
-        stm_wtetl_rollback(tx);
+    // if (!mutex_trylock(&(lock->mutex_r)))
+    // {
+    //     stm_wtetl_rollback(tx);
    
-        return 0;
-    }
+    //     return 0;
+    // }
+
+    mutex_lock(&(lock->mutex_r));
 
     r = stm_has_lock_read(tx, lock);
     if (r != NULL && read->readers == 1)
@@ -250,11 +255,13 @@ stm_wtetl_write(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr, stm_word_
             // Lock owned by other transaction
             stm_wtetl_rollback(tx);
             // printf("ROLLBACK WRITE | TID = %d | ADDR = %p | LOCK = %p\n", me(), addr, lock);
-            
+
             return NULL;
         }
         else
         {
+            // printf("#################\n");
+
             prev = w;
             while (1)
             {
@@ -286,14 +293,15 @@ stm_wtetl_write(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr, stm_word_
 
     w = &tx->w_set.entries[tx->w_set.nb_entries];
 
-
     w->addr = addr;
     w->lock = lock;
     w->read = read;
     // Remember old value
     w->value = ATOMIC_LOAD_VALUE_MRAM(addr);
+    // w->value = *addr;
 
     ATOMIC_STORE_VALUE(addr, value);
+    // *addr = value;
 
     w->next = NULL;
     if (prev != NULL)
@@ -324,6 +332,16 @@ stm_wtetl_commit(TYPE stm_tx *tx)
     /* Make sure that the updates become visible before releasing locks */
     // ATOMIC_B_WRITE;
 
+    /* Undo writes and drop locks */
+    w = tx->w_set.entries;
+    for (int i = tx->w_set.nb_entries; i > 0; i--, w++)
+    {
+        if (w->next == NULL)
+        {
+            mutex_unlock(&(w->lock->mutex_g));
+        }
+    }
+
     /* Decrease #readers */
     r = tx->r_set.entries;
     for (int i = tx->r_set.nb_entries; i > 0; i--, r++)
@@ -338,16 +356,6 @@ stm_wtetl_commit(TYPE stm_tx *tx)
             }
 
             mutex_unlock(&(r->lock->mutex_r));
-        }
-    }
-
-    /* Undo writes and drop locks */
-    w = tx->w_set.entries;
-    for (int i = tx->w_set.nb_entries; i > 0; i--, w++)
-    {
-        if (w->next == NULL)
-        {
-            mutex_unlock(&(w->lock->mutex_g));
         }
     }
 

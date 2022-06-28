@@ -9,7 +9,7 @@ for (( i = 1; i < 13; i++ )); do
 	make NR_TASKLETS=$i
 	cd ../benchmark
 	
-	for (( j = 0; j < 10; j++ )); do
+	for (( j = 0; j < 1; j++ )); do
 		./launch_intset >> results_intset.txt
 	done
 done

@@ -1,24 +1,38 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <stdint.h>
-#include <alloc.h>
 #include <assert.h>
 #include <barrier.h>
 #include <perfcounter.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 
-#include <stm.h>
 #include <defs.h>
-#include <mram.h>
+#include <stm.h>
 
-#include "macros.h"
+#include "intset_macros.h"
 
-#define TRANSFER 2
-#define N_ACCOUNTS 800
-#define ACCOUNT_V 1000
-// #define N_TRANSACTIONS 706
-#define N_TRANSACTIONS 1000
+#if defined(LINKED_LIST)
+#include "linked_list.h"
+#elif defined(SKIP_LIST)
+#include "skip_list.h"
+#elif defined(HASH_SET)
+#include "hash_set.h"
+#endif
 
-BARRIER_INIT(my_barrier, NR_TASKLETS);
+#define UPDATE_PERCENTAGE   20
+// #define SET_INITIAL_SIZE    10
+#define SET_INITIAL_SIZE    256
+// #define RAND_RANGE          100
+#define RAND_RANGE          512
+
+#define N_TRANSACTIONS      10
+
+#ifdef TX_IN_MRAM
+#define TYPE __mram_ptr
+#else
+#define TYPE
+#endif
+
+BARRIER_INIT(barrier, NR_TASKLETS);
 
 __host uint64_t nb_cycles;
 __host uint64_t nb_process_cycles;
@@ -32,37 +46,29 @@ __host uint64_t n_aborts;
 __host uint64_t n_trans;
 __host uint64_t n_tasklets;
 
-#ifdef DATA_IN_MRAM
-int __mram_noinit bank[N_ACCOUNTS];
-#else
-int bank[N_ACCOUNTS];
-#endif
+__mram_ptr intset_t *set;
 
 #ifdef TX_IN_MRAM
 stm_tx __mram_noinit tx_mram[NR_TASKLETS];
 #endif
 
-void initialize_accounts();
-void check_total();
+void test(TYPE stm_tx *tx, uint64_t *t_aborts, __mram_ptr intset_t *set, uint64_t *seed, int *last);
+void print_linked_list(__mram_ptr intset_t *set);
+void print_hash_set(__mram_ptr intset_t *set);
 
 int main()
 {
 #ifndef TX_IN_MRAM
     stm_tx tx;
 #endif
-    int tid;
-    int ra, rb;
-    unsigned int a, b;
-    uint64_t s;
-    // char buffer[BUFFER_SIZE];
+    uint64_t t_aborts = 0;
+    int val, tid;
+    uint64_t seed;
+    int i = 0;
+    int last = -1;
     perfcounter_t initial_time;
-    uint32_t t_aborts = 0;
-#ifdef RO_TX
-    int rc;
-    int t;
-#endif
 
-    s = (uint64_t)me();
+    seed = me();
     tid = me();
 
 #ifdef TX_IN_MRAM
@@ -103,95 +109,40 @@ int main()
     tx.retries = 0;
 #endif
 
-    initialize_accounts();
-
-    barrier_wait(&my_barrier);
-
     if (tid == 0)
     {
+        set = set_new(INIT_SET_PARAMETERS);
+
+        while (i < SET_INITIAL_SIZE) 
+        {
+            val = (RAND_R_FNC(seed) % RAND_RANGE) + 1;
+            if (set_add(NULL, NULL, set, val, 0))
+            {
+                i++;
+            }
+        }
+
+        // print_hash_set(set);
+
         n_trans = N_TRANSACTIONS * NR_TASKLETS;
         n_tasklets = NR_TASKLETS;
         n_aborts = 0;
 
         initial_time = perfcounter_config(COUNT_CYCLES, false);
-
-        // stm_init();
     }
 
-    // ------------------------------------------------------
+    barrier_wait(&barrier);
 
     for (int i = 0; i < N_TRANSACTIONS; ++i)
-    {   
-
-        do 
-        {
-            ra = RAND_R_FNC(s) % N_ACCOUNTS;
-            rb = RAND_R_FNC(s) % N_ACCOUNTS;
-        } while(ra == rb);
-
-        // ra = 0;
-        // rb = 1;    
-
-        
-        
-#ifdef RO_TX
-        rc = (RAND_R_FNC(s) % 100) + 1;
-#endif
-
-      
+    {
 #ifdef TX_IN_MRAM
-        START(&(tx_mram[tid]));
-
-        a = LOAD(&(tx_mram[tid]), &bank[ra], t_aborts, tid);
-        a -= TRANSFER;
-        STORE(&(tx_mram[tid]), &bank[ra], a, t_aborts);
-
-        b = LOAD(&(tx_mram[tid]), &bank[rb], t_aborts, tid);
-        b += TRANSFER;
-        STORE(&(tx_mram[tid]), &bank[rb], b, t_aborts);
-
-        COMMIT(&(tx_mram[tid]), t_aborts);
+        test(&(tx_mram[tid]), &t_aborts, set, &seed, &last);
 #else
-        START(&tx);
-
-        a = LOAD(&tx, &bank[ra], t_aborts, tid);
-        a -= TRANSFER;
-        STORE(&tx, &bank[ra], a, t_aborts);
-
-        b = LOAD(&tx, &bank[rb], t_aborts, tid);
-        b += TRANSFER;
-        STORE(&tx, &bank[rb], b, t_aborts);
-
-        COMMIT(&tx, t_aborts);
-#endif
-
-#if defined(RO_TX)
-        if (rc <= 10)
-        {
-            START(&(tx_mram[tid]));
-
-            t = 0;
-
-            for (int j = 0; j < N_ACCOUNTS; ++j)
-            {
-                t += LOAD_RO(&(tx_mram[tid]), &bank[j], t_aborts);
-            }
-
-            if (tx_mram[tid].status == 4)
-            {
-                continue;
-            }
-
-            COMMIT(&(tx_mram[tid]), t_aborts);
-
-            assert(t == (N_ACCOUNTS * ACCOUNT_V));
-        }
+        test(&tx, &t_aborts, set, &seed, &last);
 #endif
     }
 
-    // ------------------------------------------------------
-
-    barrier_wait(&my_barrier);
+    barrier_wait(&barrier);
 
     if (me() == 0)
     {
@@ -235,40 +186,77 @@ int main()
 #endif
         }
 
-        barrier_wait(&my_barrier);
+        barrier_wait(&barrier);
     }
 
-    // check_total();
-    
+    if (me() == 0)
+    {
+        // print_linked_list(set);
+        // print_hash_set(set);
+    }
+
     return 0;
 }
 
-void initialize_accounts()
+
+void test(TYPE stm_tx *tx, uint64_t *t_aborts, __mram_ptr intset_t *set, uint64_t *seed, int *last)
 {
-    if (me() == 0)
+    int val, op;
+
+    op = RAND_R_FNC(*seed) % 100;
+    if (op < UPDATE_PERCENTAGE)
     {
-        for (int i = 0; i < N_ACCOUNTS; ++i)
+        if (*last < 0)
         {
-            bank[i] = ACCOUNT_V;
-        }    
+            /* Add random value */
+            val = (RAND_R_FNC(*seed) % RAND_RANGE) + 1;
+            if (set_add(tx, t_aborts, set, val, 1))
+            {
+                *last = val;
+            }
+        }
+        else
+        {
+            /* Remove last value */
+            set_remove(tx, t_aborts, set, *last);
+            *last = -1;
+        }
+    }
+    else
+    {
+        /* Look for random value */
+        val = (RAND_R_FNC(*seed) % RAND_RANGE) + 1;
+        set_contains(tx, t_aborts, set, val);
     }
 }
 
-void check_total()
+
+void print_linked_list(__mram_ptr intset_t *set)
 {
-    if (me() == 0)
-    {
-        printf("[");
-        int total = 0;
-        for (int i = 0; i < N_ACCOUNTS; ++i)
-        {
-            printf("%d,", bank[i]);
-            total += bank[i];
-        }
-        printf("]\n");
+    // for (__mram_ptr node_t *n = set->head->next; n->next != NULL; n = n->next)
+    // {
+    //     printf("%p -> %u\n", n, n->val);
+    // }
+}
 
-        printf("TOTAL = %u\n", total);
+void print_hash_set(__mram_ptr intset_t *set)
+{
+    // __mram_ptr bucket_t *b;
 
-        assert(total == (N_ACCOUNTS * ACCOUNT_V));
-    }
+    // for (int i = 0; i < 1024; ++i)
+    // {
+    //     b = (__mram_ptr bucket_t *)set->buckets[i];
+
+    //     if (b)
+    //     {
+    //         printf("\n");
+    //     }
+        
+    //     for (; b != NULL ; b = b->next)
+    //     {
+    //         printf("%u -", b->val);
+    //     }
+    // }
+
+    // printf("\n");
 }
