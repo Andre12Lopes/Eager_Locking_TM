@@ -160,7 +160,7 @@ stm_wtetl_read(TYPE stm_tx *tx, volatile __mram_ptr stm_word_t *addr)
     lock = GET_LOCK(addr);
     read = GET_READ(addr);
 
-    if (stm_has_lock(tx, lock))
+    if (stm_has_lock(tx, lock) || stm_has_lock_read(tx, lock))
     {
         value = ATOMIC_LOAD_VALUE_MRAM(addr);
 

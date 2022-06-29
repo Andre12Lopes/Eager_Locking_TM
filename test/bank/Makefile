@@ -1,7 +1,7 @@
  ROOT = ../..
 
 CC = dpu-upmem-dpurte-clang
-NR_TASKLETS = 2
+NR_TASKLETS = 4
 
 TM = stm
 SRCDIR = $(ROOT)/src

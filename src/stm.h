@@ -17,7 +17,7 @@
 #endif
 
 #ifndef R_SET_SIZE
-# define R_SET_SIZE                 15                /* Initial size of read sets */
+# define R_SET_SIZE                 35                /* Initial size of read sets */
 #endif /* ! RW_SET_SIZE */
 
 #ifndef W_SET_SIZE

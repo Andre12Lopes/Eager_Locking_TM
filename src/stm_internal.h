@@ -159,10 +159,10 @@ int_stm_commit(TYPE stm_tx *tx)
     tx->time = perfcounter_config(COUNT_CYCLES, false);
 
     /* A read-only transaction can commit immediately */
-    if (tx->w_set.nb_entries != 0)
-    {
+    // if (tx->w_set.nb_entries != 0)
+    // {
         stm_wtetl_commit(tx);
-    }
+    // }
 
     if (IS_ABORTED(tx->status))
     {

@@ -18,13 +18,13 @@
 #include "hash_set.h"
 #endif
 
-#define UPDATE_PERCENTAGE   20
-// #define SET_INITIAL_SIZE    10
-#define SET_INITIAL_SIZE    256
-// #define RAND_RANGE          100
-#define RAND_RANGE          512
+#define UPDATE_PERCENTAGE   0
+#define SET_INITIAL_SIZE    10
+// #define SET_INITIAL_SIZE    256
+#define RAND_RANGE          100
+// #define RAND_RANGE          512
 
-#define N_TRANSACTIONS      10
+#define N_TRANSACTIONS      100
 
 #ifdef TX_IN_MRAM
 #define TYPE __mram_ptr

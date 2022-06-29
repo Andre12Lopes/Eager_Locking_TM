@@ -13,7 +13,7 @@
 #include "macros.h"
 
 #define TRANSFER 2
-#define N_ACCOUNTS 800
+#define N_ACCOUNTS 10
 #define ACCOUNT_V 1000
 // #define N_TRANSACTIONS 706
 #define N_TRANSACTIONS 1000
@@ -238,7 +238,7 @@ int main()
         barrier_wait(&my_barrier);
     }
 
-    // check_total();
+    check_total();
     
     return 0;
 }
